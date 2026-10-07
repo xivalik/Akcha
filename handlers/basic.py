@@ -1,5 +1,6 @@
-async def start(update, context):
-    await update.message.reply_text(f"Hi {update.effective_user.first_name}👋")
+from db.database import save_user
 
-async def echo(update, context):
-    await update.message.reply_text(update.message.text)
+async def start(update, context):
+    user = update.effective_user
+    save_user(user.id, user.full_name, user.username)
+    await update.effective_message.reply_text(f"Hi {user.first_name}👋")

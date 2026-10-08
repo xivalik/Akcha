@@ -3,5 +3,5 @@ import os
 
 load_dotenv()
 
-TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 CLAUDE_API = os.getenv("CLAUDE_API")

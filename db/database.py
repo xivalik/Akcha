@@ -29,17 +29,16 @@ def init_db():
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
 
 
-def save_user(tg_id, profile_name, username):
+def save_user(tg_id, profile_name):
     """Add a new user, or update their names if they already exist."""
     with get_conn() as conn:
         conn.execute(
             """
-            INSERT INTO users (tg_id, profile_name, username) VALUES (?, ?, ?)
+            INSERT INTO users (tg_id, profile_name) VALUES (?, ?)
             ON CONFLICT(tg_id) DO UPDATE SET
-                profile_name = excluded.profile_name,
-                username = excluded.username
+                profile_name = excluded.profile_name
             """,
-            (tg_id, profile_name, username),
+            (tg_id, profile_name),
         )
 
 

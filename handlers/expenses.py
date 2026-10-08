@@ -1,8 +1,9 @@
 import logging
 
 import anthropic
-from db.database import add_product, get_products
+
 from claude import parse_purchases
+from db.database import add_product, get_products
 
 
 async def expenses(update, context):

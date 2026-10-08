@@ -12,14 +12,4 @@ CREATE TABLE IF NOT EXISTS products (
     added_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS subscriptions (
-    id INTEGER PRIMARY KEY,
-    tg_id INTEGER,
-    service_name TEXT,
-    price REAL,
-    start_date TEXT,
-    end_date TEXT
-);
-
 CREATE INDEX IF NOT EXISTS idx_products_user ON products(tg_id);
-CREATE INDEX IF NOT EXISTS idx_subs_user ON subscriptions(tg_id);

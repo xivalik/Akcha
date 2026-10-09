@@ -12,6 +12,7 @@ from handlers.start import start
 from handlers.expenses import expenses, add_product_request, undo_add
 
 logging.basicConfig(level=logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 def main():

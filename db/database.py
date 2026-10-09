@@ -16,6 +16,7 @@ def get_conn():
     """Open the database, save changes, and always close it."""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row  # lets you use row["product_name"]
+    conn.execute("PRAGMA secure_delete = ON")  # overwrite deleted data with zeros
     try:
         yield conn
         conn.commit()
@@ -29,25 +30,35 @@ def init_db():
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
 
 
-def save_user(tg_id, profile_name):
-    """Add a new user, or update their names if they already exist."""
+def save_user(tg_id):
+    """Remember a user (does nothing if they already exist)."""
     with get_conn() as conn:
-        conn.execute(
-            """
-            INSERT INTO users (tg_id, profile_name) VALUES (?, ?)
-            ON CONFLICT(tg_id) DO UPDATE SET
-                profile_name = excluded.profile_name
-            """,
-            (tg_id, profile_name),
-        )
+        conn.execute("INSERT OR IGNORE INTO users (tg_id) VALUES (?)", (tg_id,))
 
 
-def add_product(tg_id, product_name, price):
+def add_products(tg_id, items):
+    """Insert all items in one transaction and return (first_id, last_id).
+
+    The ids are consecutive because nothing else can write in between.
+    """
     with get_conn() as conn:
-        conn.execute(
-            "INSERT INTO products (tg_id, product_name, price) VALUES (?, ?, ?)",
-            (tg_id, product_name, price),
-        )
+        ids = [
+            conn.execute(
+                "INSERT INTO products (tg_id, product_name, price) VALUES (?, ?, ?)",
+                (tg_id, i["product_name"], i["price"]),
+            ).lastrowid
+            for i in items
+        ]
+    return ids[0], ids[-1]
+
+
+def delete_products(tg_id, first_id, last_id):
+    """Delete the user's products with ids in [first_id, last_id]; return count."""
+    with get_conn() as conn:
+        return conn.execute(
+            "DELETE FROM products WHERE tg_id = ? AND id BETWEEN ? AND ?",
+            (tg_id, first_id, last_id),
+        ).rowcount
 
 
 def get_products(tg_id):

@@ -1,6 +1,5 @@
 CREATE TABLE IF NOT EXISTS users (
-    tg_id INTEGER PRIMARY KEY,
-    profile_name TEXT
+    tg_id INTEGER PRIMARY KEY
 );
 
 CREATE TABLE IF NOT EXISTS products (

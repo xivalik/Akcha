@@ -1,9 +1,10 @@
 import logging
 
 import anthropic
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from claude import parse_purchases
-from db.database import add_product, get_products
+from db.database import add_products, delete_products, get_products
 
 
 async def expenses(update, context):
@@ -36,7 +37,22 @@ async def add_product_request(update, context):
         )
         return
 
-    for item in items:
-        add_product(user.id, item["product_name"], item["price"])
+    first_id, last_id = add_products(user.id, items)
     added = "\n".join(f"{i['product_name']}: {i['price']}" for i in items)
-    await msg.reply_text(f"Added ✅\n{added}")
+    keyboard = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("↩️ Undo", callback_data=f"undo:{first_id}:{last_id}")]]
+    )
+    await msg.reply_text(f"Added ✅\n{added}", reply_markup=keyboard)
+
+
+async def undo_add(update, context):
+    query = update.callback_query
+    _, first_id, last_id = query.data.split(":")
+    deleted = delete_products(update.effective_user.id, int(first_id), int(last_id))
+    if not deleted:
+        await query.answer("Already removed.")
+        await query.edit_message_reply_markup(reply_markup=None)
+        return
+    await query.answer("Removed.")
+    items = query.message.text.removeprefix("Added ✅\n")
+    await query.edit_message_text(f"Cancelled ❌\n{items}")

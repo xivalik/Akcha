@@ -1,3 +1,4 @@
+import unicodedata
 from html import escape
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -8,6 +9,16 @@ from db.database import add_products, delete_products, get_currency, get_product
 SMART_PUNCTUATION = str.maketrans(
     {"‘": "'", "’": "'", "“": '"', "”": '"', "–": "-", "—": "-"}
 )
+
+
+def is_valid_name(name):
+    """Letters of any language (ä, ö, å...), digits and keyboard symbols; no emojis.
+
+    isprintable() rejects invisible/control characters, and emojis are "So" (other symbol).
+    """
+    return bool(name) and name.isprintable() and not any(
+        unicodedata.category(c) == "So" for c in name
+    )
 
 
 def format_price(price):
@@ -39,7 +50,8 @@ async def add_product_request(update, context):
     msg = update.effective_message
     *name, price = msg.text.translate(SMART_PUNCTUATION).split()
     try:
-        price = float(price)
+        # Many keyboards/locales write decimals with a comma: 2,32 -> 2.32
+        price = float(price.replace(",", "."))
     except ValueError:
         name = None
     if not name:
@@ -47,32 +59,61 @@ async def add_product_request(update, context):
             "Please use the format: product price\nFor example: apple 3"
         )
         return
-    # English letters, digits and keyboard symbols (- ' & . etc.)
-    if not all(word.isascii() and word.isprintable() for word in name):
+    name = " ".join(name)
+    if not is_valid_name(name):
         await msg.reply_text(
-            "Please write the product name in English letters, digits and symbols only."
+            "Please write the product name with letters, digits and symbols only (no emojis)."
         )
         return
 
-    item = {"product_name": " ".join(name).lower(), "price": price}
-    first_id, last_id = add_products(user.id, [item])
-    added = (
-        f"{item['product_name']}: {get_currency(user.id)}{format_price(item['price'])}"
-    )
+    item = {"product_name": name.lower(), "price": price}
+    await save_and_reply(msg, user.id, item)
+
+
+ADDED = "Added ✅\n"
+CONFIRM_QUESTION = "\n\nDo you really want to cancel this record?"
+
+
+def undo_keyboard(ids):
+    """The Undo button for products with ids "first:last"."""
+    return InlineKeyboardMarkup([[InlineKeyboardButton("↩️ Undo", callback_data=f"undo:{ids}")]])
+
+
+async def save_and_reply(msg, tg_id, item):
+    """Save one product and reply "Added ✅" with an Undo button for it."""
+    first_id, last_id = add_products(tg_id, [item])
+    added = f"{item['product_name']} — {format_price(item['price'])} {get_currency(tg_id)}"
+    await msg.reply_text(f"{ADDED}{added}", reply_markup=undo_keyboard(f"{first_id}:{last_id}"))
+
+
+async def undo_ask(update, context):
+    """Undo tapped: ask for confirmation before deleting anything."""
+    query = update.callback_query
+    ids = query.data.removeprefix("undo:")
     keyboard = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("↩️ Undo", callback_data=f"undo:{first_id}:{last_id}")]]
+        [[
+            InlineKeyboardButton("✅ Yes", callback_data=f"undo_yes:{ids}"),
+            InlineKeyboardButton("❌ No", callback_data=f"undo_no:{ids}"),
+        ]]
     )
-    await msg.reply_text(f"Added ✅\n{added}", reply_markup=keyboard)
+    await query.answer()
+    await query.edit_message_text(query.message.text + CONFIRM_QUESTION, reply_markup=keyboard)
+
+
+async def undo_keep(update, context):
+    """No: put the message back the way it was, with the Undo button."""
+    query = update.callback_query
+    ids = query.data.removeprefix("undo_no:")
+    await query.answer("Kept.")
+    text = query.message.text.removesuffix(CONFIRM_QUESTION)
+    await query.edit_message_text(text, reply_markup=undo_keyboard(ids))
 
 
 async def undo_add(update, context):
+    """Yes: delete the products and mark the message as cancelled."""
     query = update.callback_query
     _, first_id, last_id = query.data.split(":")
     deleted = delete_products(update.effective_user.id, int(first_id), int(last_id))
-    if not deleted:
-        await query.answer("Already removed.")
-        await query.edit_message_reply_markup(reply_markup=None)
-        return
-    await query.answer("Removed.")
-    items = query.message.text.removeprefix("Added ✅\n")
+    items = query.message.text.removeprefix(ADDED).removesuffix(CONFIRM_QUESTION)
+    await query.answer("Removed." if deleted else "Already removed.")
     await query.edit_message_text(f"Cancelled ❌\n{items}")

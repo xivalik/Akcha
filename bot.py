@@ -9,9 +9,10 @@ import logging
 from config import BOT_TOKEN
 from db.database import init_db
 from handlers.start import start
-from handlers.expenses import expenses, add_product_request, undo_add
+from handlers.expenses import expenses, add_product_request, undo_ask, undo_keep, undo_add
 from handlers.admin import admin_panel, send_db
 from handlers.currency import currency, choose_currency
+from handlers.receipt import receipt_photo
 
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -28,7 +29,10 @@ def main():
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, add_product_request)
     )
-    app.add_handler(CallbackQueryHandler(undo_add, pattern=r"^undo:\d+:\d+$"))
+    app.add_handler(MessageHandler(filters.PHOTO, receipt_photo))
+    app.add_handler(CallbackQueryHandler(undo_ask, pattern=r"^undo:\d+:\d+$"))
+    app.add_handler(CallbackQueryHandler(undo_add, pattern=r"^undo_yes:\d+:\d+$"))
+    app.add_handler(CallbackQueryHandler(undo_keep, pattern=r"^undo_no:\d+:\d+$"))
     app.add_handler(CallbackQueryHandler(send_db, pattern=r"^admin:db$"))
     app.add_handler(CallbackQueryHandler(choose_currency, pattern=r"^currency:"))
     app.run_polling()

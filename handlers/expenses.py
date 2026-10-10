@@ -1,10 +1,9 @@
-import logging
-
-import anthropic
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from claude import parse_purchases
 from db.database import add_products, delete_products, get_products
+
+# Phone keyboards auto-replace ' " - with curly/long versions; turn them back
+SMART_PUNCTUATION = str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"', "–": "-", "—": "-"})
 
 
 async def expenses(update, context):
@@ -22,23 +21,24 @@ async def expenses(update, context):
 async def add_product_request(update, context):
     user = update.effective_user
     msg = update.effective_message
+    *name, price = msg.text.translate(SMART_PUNCTUATION).split()
     try:
-        items = await parse_purchases(msg.text)
-    except anthropic.APIError:
-        logging.exception("Claude request failed")
+        price = float(price)
+    except ValueError:
+        name = None
+    if not name:
+        await msg.reply_text("Please use the format: product price\nFor example: apple 3")
+        return
+    # English letters, digits and keyboard symbols (- ' & . etc.)
+    if not all(word.isascii() and word.isprintable() for word in name):
         await msg.reply_text(
-            "Sorry, I couldn't process that right now. Try again in a moment."
+            "Please write the product name in English letters, digits and symbols only."
         )
         return
 
-    if not items:
-        await msg.reply_text(
-            "I didn't find a product and price there. Try something like: apple 3"
-        )
-        return
-
-    first_id, last_id = add_products(user.id, items)
-    added = "\n".join(f"{i['product_name']}: {i['price']}" for i in items)
+    item = {"product_name": " ".join(name), "price": price}
+    first_id, last_id = add_products(user.id, [item])
+    added = f"{item['product_name']}: {item['price']}"
     keyboard = InlineKeyboardMarkup(
         [[InlineKeyboardButton("↩️ Undo", callback_data=f"undo:{first_id}:{last_id}")]]
     )

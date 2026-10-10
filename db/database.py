@@ -67,3 +67,18 @@ def get_products(tg_id):
             "SELECT product_name, price FROM products WHERE tg_id = ? ORDER BY added_at",
             (tg_id,),
         ).fetchall()
+
+def get_all_tables():
+    """Return {table_name: (column_names, rows)} for every table in the database."""
+    with get_conn() as conn:
+        names = [
+            r["name"]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+            )
+        ]
+        tables = {}
+        for name in names:
+            cur = conn.execute(f'SELECT * FROM "{name}"')
+            tables[name] = ([c[0] for c in cur.description], cur.fetchall())
+        return tables

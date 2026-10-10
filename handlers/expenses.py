@@ -28,8 +28,8 @@ def format_price(price):
 
 
 def format_money(price, sign):
-    """HTML for a price: the amount underlined, the currency in italics."""
-    return f"<u>{format_price(price)}</u> <i>{escape(sign)}</i>"
+    """HTML for a price: the currency in italics."""
+    return f"{format_price(price)} <i>{escape(sign)}</i>"
 
 
 async def expenses(update, context):
@@ -106,7 +106,7 @@ async def undo_ask(update, context):
         ]]
     )
     await query.answer()
-    # text_html keeps the underline/italics; plain .text would lose them
+    # text_html keeps the italics; plain .text would lose them
     await query.edit_message_text(
         query.message.text_html + CONFIRM_QUESTION, parse_mode="HTML", reply_markup=keyboard
     )

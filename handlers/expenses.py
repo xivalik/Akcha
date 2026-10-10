@@ -5,7 +5,9 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from db.database import add_products, delete_products, get_currency, get_products
 
 # Phone keyboards auto-replace ' " - with curly/long versions; turn them back
-SMART_PUNCTUATION = str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"', "–": "-", "—": "-"})
+SMART_PUNCTUATION = str.maketrans(
+    {"‘": "'", "’": "'", "“": '"', "”": '"', "–": "-", "—": "-"}
+)
 
 
 def format_price(price):
@@ -22,7 +24,10 @@ async def expenses(update, context):
         return
     sign = get_currency(user.id)
     # escape() so names like "M&M" or "<3" don't break the HTML formatting
-    lines = [f"{escape(r['product_name'])} — {format_price(r['price'])} {sign}" for r in rows]
+    lines = [
+        f"{escape(r['product_name'])} —— {format_price(r['price'])} {sign}"
+        for r in rows
+    ]
     total = sum(r["price"] for r in rows)
     lines.append("──────────────")
     lines.append(f"Total — {format_price(total)} {sign}")
@@ -39,7 +44,9 @@ async def add_product_request(update, context):
     except ValueError:
         name = None
     if not name:
-        await msg.reply_text("Please use the format: product price\nFor example: apple 3")
+        await msg.reply_text(
+            "Please use the format: product price\nFor example: apple 3"
+        )
         return
     # English letters, digits and keyboard symbols (- ' & . etc.)
     if not all(word.isascii() and word.isprintable() for word in name):
@@ -50,7 +57,9 @@ async def add_product_request(update, context):
 
     item = {"product_name": " ".join(name).lower(), "price": price}
     first_id, last_id = add_products(user.id, [item])
-    added = f"{item['product_name']}: {get_currency(user.id)}{format_price(item['price'])}"
+    added = (
+        f"{item['product_name']}: {get_currency(user.id)}{format_price(item['price'])}"
+    )
     keyboard = InlineKeyboardMarkup(
         [[InlineKeyboardButton("↩️ Undo", callback_data=f"undo:{first_id}:{last_id}")]]
     )

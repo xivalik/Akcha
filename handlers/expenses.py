@@ -27,6 +27,11 @@ def format_price(price):
     return int(price) if float(price).is_integer() else price
 
 
+def format_money(price, sign):
+    """HTML for a price: the amount underlined, the currency in italics."""
+    return f"<u>{format_price(price)}</u> <i>{escape(sign)}</i>"
+
+
 async def expenses(update, context):
     user = update.effective_user
     rows = get_products(user.id)
@@ -36,11 +41,11 @@ async def expenses(update, context):
     sign = get_currency(user.id)
     # escape() so names like "M&M" or "<3" don't break the HTML formatting
     lines = [
-        f"{escape(r['product_name'])} — {format_price(r['price'])} {sign}" for r in rows
+        f"{escape(r['product_name'])} — {format_money(r['price'], sign)}" for r in rows
     ]
     total = sum(r["price"] for r in rows)
     lines.append("──────────────")
-    lines.append(f"Total — {format_price(total)} {sign}")
+    lines.append(f"Total — {format_money(total, sign)}")
     text = "\n".join(lines)
     await update.effective_message.reply_text(f"<b>{text}</b>", parse_mode="HTML")
 
@@ -82,8 +87,12 @@ def undo_keyboard(ids):
 async def save_and_reply(msg, tg_id, item):
     """Save one product and reply "Added ✅" with an Undo button for it."""
     first_id, last_id = add_products(tg_id, [item])
-    added = f"{item['product_name']} — {format_price(item['price'])} {get_currency(tg_id)}"
-    await msg.reply_text(f"{ADDED}{added}", reply_markup=undo_keyboard(f"{first_id}:{last_id}"))
+    added = f"{escape(item['product_name'])} — {format_money(item['price'], get_currency(tg_id))}"
+    await msg.reply_text(
+        f"{ADDED}{added}",
+        parse_mode="HTML",
+        reply_markup=undo_keyboard(f"{first_id}:{last_id}"),
+    )
 
 
 async def undo_ask(update, context):
@@ -97,7 +106,10 @@ async def undo_ask(update, context):
         ]]
     )
     await query.answer()
-    await query.edit_message_text(query.message.text + CONFIRM_QUESTION, reply_markup=keyboard)
+    # text_html keeps the underline/italics; plain .text would lose them
+    await query.edit_message_text(
+        query.message.text_html + CONFIRM_QUESTION, parse_mode="HTML", reply_markup=keyboard
+    )
 
 
 async def undo_keep(update, context):
@@ -105,8 +117,8 @@ async def undo_keep(update, context):
     query = update.callback_query
     ids = query.data.removeprefix("undo_no:")
     await query.answer("Kept.")
-    text = query.message.text.removesuffix(CONFIRM_QUESTION)
-    await query.edit_message_text(text, reply_markup=undo_keyboard(ids))
+    text = query.message.text_html.removesuffix(CONFIRM_QUESTION)
+    await query.edit_message_text(text, parse_mode="HTML", reply_markup=undo_keyboard(ids))
 
 
 async def undo_add(update, context):
@@ -114,6 +126,6 @@ async def undo_add(update, context):
     query = update.callback_query
     _, first_id, last_id = query.data.split(":")
     deleted = delete_products(update.effective_user.id, int(first_id), int(last_id))
-    items = query.message.text.removeprefix(ADDED).removesuffix(CONFIRM_QUESTION)
+    items = query.message.text_html.removeprefix(ADDED).removesuffix(CONFIRM_QUESTION)
     await query.answer("Removed." if deleted else "Already removed.")
-    await query.edit_message_text(f"Cancelled ❌\n{items}")
+    await query.edit_message_text(f"Cancelled ❌\n{items}", parse_mode="HTML")

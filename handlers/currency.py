@@ -2,7 +2,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from db.database import get_currency, set_currency
 
-CURRENCIES = ["$", "€", "₽", "uzs"]
+CURRENCIES = ["$", "€", "₽", "SUM"]
 
 
 async def currency(update, context):
@@ -16,7 +16,9 @@ async def currency(update, context):
         ]
     )
     await update.effective_message.reply_text(
-        f"Choose your currency (current: {current})", reply_markup=keyboard
+        f"Choose your currency (current: <i>{current}</i>)",
+        parse_mode="HTML",
+        reply_markup=keyboard,
     )
 
 
@@ -28,4 +30,4 @@ async def choose_currency(update, context):
         return
     set_currency(update.effective_user.id, sign)
     await query.answer("Saved.")
-    await query.edit_message_text(f"Currency set to {sign} ✅")
+    await query.edit_message_text(f"Currency set to <i>{sign}</i> ✅", parse_mode="HTML")

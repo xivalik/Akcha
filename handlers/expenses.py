@@ -6,6 +6,8 @@ from db.database import add_products, delete_products, get_currency, get_product
 
 # Phone keyboards auto-replace ' " - with curly/long versions; turn them back
 SMART_PUNCTUATION = str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"', "–": "-", "—": "-"})
+# Longest product name shown in /expenses before it gets cut with "…"
+MAX_NAME_WIDTH = 18
 
 
 def format_price(price):
@@ -21,11 +23,20 @@ async def expenses(update, context):
         await update.effective_message.reply_text("You have no products yet.")
         return
     sign = get_currency(user.id)
-    # escape() so names like "M&M" or "<3" don't break the HTML formatting
-    lines = [f"<b>{escape(r['product_name'])}</b>: {sign}{format_price(r['price'])}" for r in rows]
-    total = sum(r["price"] for r in rows)
-    lines.append(f"\n<b>Total:</b> {sign}{format_price(total)}")
-    await update.effective_message.reply_text("\n".join(lines), parse_mode="HTML")
+    # Cut long names so the table doesn't wrap on narrow phone screens
+    names = [n if len(n) <= MAX_NAME_WIDTH else n[:MAX_NAME_WIDTH - 1] + "…"
+             for n in (r["product_name"] for r in rows)]
+    prices = [f"{sign}{format_price(r['price'])}" for r in rows]
+    total = f"{sign}{format_price(sum(r['price'] for r in rows))}"
+
+    name_width = max(len(n) for n in names + ["Total"])
+    price_width = max(len(p) for p in prices + [total])
+    lines = [f"{n.ljust(name_width)}  {p.rjust(price_width)}" for n, p in zip(names, prices)]
+    lines.append("─" * (name_width + 2 + price_width))
+    lines.append(f"{'Total'.ljust(name_width)}  {total.rjust(price_width)}")
+    # Pad first, then escape() — escaping "&" to "&amp;" would throw off the column widths
+    table = escape("\n".join(lines))
+    await update.effective_message.reply_text(f"<pre>{table}</pre>", parse_mode="HTML")
 
 
 async def add_product_request(update, context):

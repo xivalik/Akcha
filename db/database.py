@@ -62,9 +62,12 @@ def delete_products(tg_id, first_id, last_id):
 
 
 def get_products(tg_id):
+    """One row per product with all its prices added up ("Apple" and "apple" merge)."""
     with get_conn() as conn:
         return conn.execute(
-            "SELECT product_name, price FROM products WHERE tg_id = ? ORDER BY added_at",
+            """SELECT LOWER(product_name) AS product_name, SUM(price) AS price
+               FROM products WHERE tg_id = ?
+               GROUP BY LOWER(product_name) ORDER BY MIN(id)""",
             (tg_id,),
         ).fetchall()
 

@@ -1,3 +1,5 @@
+from html import escape
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from db.database import add_products, delete_products, get_products
@@ -12,10 +14,11 @@ async def expenses(update, context):
     if not rows:
         await update.effective_message.reply_text("You have no products yet.")
         return
-    lines = [f"{r['product_name']}: {r['price']}" for r in rows]
+    # escape() so names like "M&M" or "<3" don't break the HTML formatting
+    lines = [f"<b>{escape(r['product_name'])}</b>: {r['price']}" for r in rows]
     total = sum(r["price"] for r in rows)
-    lines.append(f"\nTotal: {total}")
-    await update.effective_message.reply_text("\n".join(lines))
+    lines.append(f"\n<b>Total:</b> {total}")
+    await update.effective_message.reply_text("\n".join(lines), parse_mode="HTML")
 
 
 async def add_product_request(update, context):
@@ -36,7 +39,7 @@ async def add_product_request(update, context):
         )
         return
 
-    item = {"product_name": " ".join(name), "price": price}
+    item = {"product_name": " ".join(name).lower(), "price": price}
     first_id, last_id = add_products(user.id, [item])
     added = f"{item['product_name']}: {item['price']}"
     keyboard = InlineKeyboardMarkup(

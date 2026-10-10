@@ -28,12 +28,35 @@ def init_db():
     """Create the tables from schema.sql (safe to run every start)."""
     with get_conn() as conn:
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+        # Databases created before the currency feature don't have the column yet
+        columns = [r["name"] for r in conn.execute("PRAGMA table_info(users)")]
+        if "currency" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN currency TEXT DEFAULT '$'")
 
 
 def save_user(tg_id):
     """Remember a user (does nothing if they already exist)."""
     with get_conn() as conn:
         conn.execute("INSERT OR IGNORE INTO users (tg_id) VALUES (?)", (tg_id,))
+
+
+def set_currency(tg_id, currency):
+    """Save the user's currency sign (creates the user if needed)."""
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO users (tg_id, currency) VALUES (?, ?)
+               ON CONFLICT(tg_id) DO UPDATE SET currency = excluded.currency""",
+            (tg_id, currency),
+        )
+
+
+def get_currency(tg_id):
+    """The user's currency sign, or $ if they never picked one."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT currency FROM users WHERE tg_id = ?", (tg_id,)
+        ).fetchone()
+    return row["currency"] if row and row["currency"] else "$"
 
 
 def add_products(tg_id, items):

@@ -2,10 +2,16 @@ from html import escape
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from db.database import add_products, delete_products, get_products
+from db.database import add_products, delete_products, get_currency, get_products
 
 # Phone keyboards auto-replace ' " - with curly/long versions; turn them back
 SMART_PUNCTUATION = str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"', "–": "-", "—": "-"})
+
+
+def format_price(price):
+    """Round to cents and drop a useless .0: 3.0 -> 3, 3.5 -> 3.5, 0.1 + 0.2 -> 0.3."""
+    price = round(price, 2)
+    return int(price) if float(price).is_integer() else price
 
 
 async def expenses(update, context):
@@ -14,10 +20,11 @@ async def expenses(update, context):
     if not rows:
         await update.effective_message.reply_text("You have no products yet.")
         return
+    sign = get_currency(user.id)
     # escape() so names like "M&M" or "<3" don't break the HTML formatting
-    lines = [f"<b>{escape(r['product_name'])}</b>: {r['price']}" for r in rows]
+    lines = [f"<b>{escape(r['product_name'])}</b>: {sign}{format_price(r['price'])}" for r in rows]
     total = sum(r["price"] for r in rows)
-    lines.append(f"\n<b>Total:</b> {total}")
+    lines.append(f"\n<b>Total:</b> {sign}{format_price(total)}")
     await update.effective_message.reply_text("\n".join(lines), parse_mode="HTML")
 
 
@@ -41,7 +48,7 @@ async def add_product_request(update, context):
 
     item = {"product_name": " ".join(name).lower(), "price": price}
     first_id, last_id = add_products(user.id, [item])
-    added = f"{item['product_name']}: {item['price']}"
+    added = f"{item['product_name']}: {get_currency(user.id)}{format_price(item['price'])}"
     keyboard = InlineKeyboardMarkup(
         [[InlineKeyboardButton("↩️ Undo", callback_data=f"undo:{first_id}:{last_id}")]]
     )

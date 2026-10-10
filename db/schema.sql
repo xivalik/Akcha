@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS users (
-    tg_id INTEGER PRIMARY KEY
+    tg_id INTEGER PRIMARY KEY,
+    currency TEXT DEFAULT '$'
 );
 
 CREATE TABLE IF NOT EXISTS products (

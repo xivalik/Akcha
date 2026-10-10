@@ -25,8 +25,7 @@ async def expenses(update, context):
     sign = get_currency(user.id)
     # escape() so names like "M&M" or "<3" don't break the HTML formatting
     lines = [
-        f"{escape(r['product_name'])} —— {format_price(r['price'])} {sign}"
-        for r in rows
+        f"{escape(r['product_name'])} — {format_price(r['price'])} {sign}" for r in rows
     ]
     total = sum(r["price"] for r in rows)
     lines.append("──────────────")

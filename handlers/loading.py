@@ -1,16 +1,26 @@
 import asyncio
 from contextlib import asynccontextmanager, suppress
+from datetime import timedelta
 from itertools import count
 
-from telegram.error import TelegramError
+from telegram.error import RetryAfter, TelegramError
 
 SPINNER = "🌑🌒🌓🌔🌕🌖🌗🌘"
 DOTS = [".", "..", "..."]
-FRAME_SECONDS = 1.5  # Telegram limits how often one chat's message can be edited
+# Faster than Telegram's ~1 edit/second guideline; if it tells us to slow down,
+# the animation stops (see below), so the real answers still get through
+FRAME_SECONDS = 0.5
 
 
 def frame(text, i):
     return f"{SPINNER[i % len(SPINNER)]} <b>{text}{DOTS[i % len(DOTS)]}</b>"
+
+
+def seconds(retry_after):
+    """RetryAfter.retry_after is a number of seconds or a timedelta, depending on settings."""
+    if isinstance(retry_after, timedelta):
+        return retry_after.total_seconds()
+    return retry_after
 
 
 @asynccontextmanager
@@ -25,9 +35,12 @@ async def loading(msg, text):
     async def animate():
         for i in count(1):
             await asyncio.sleep(FRAME_SECONDS)
-            # A missed frame (e.g. Telegram asking to slow down) doesn't matter
-            with suppress(TelegramError):
+            try:
                 await note.edit_text(frame(text, i), parse_mode="HTML")
+            except RetryAfter:
+                return  # Telegram asked us to slow down: keep the last frame still
+            except TelegramError:
+                pass  # a missed frame doesn't matter
 
     task = asyncio.create_task(animate())
     try:
@@ -36,5 +49,12 @@ async def loading(msg, text):
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task
-        with suppress(TelegramError):
+        try:
             await note.delete()
+        except RetryAfter as e:
+            # Wait as long as Telegram asks; this also spaces out the replies that follow
+            await asyncio.sleep(seconds(e.retry_after))
+            with suppress(TelegramError):
+                await note.delete()
+        except TelegramError:
+            pass

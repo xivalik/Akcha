@@ -4,7 +4,6 @@ from html import escape
 
 import anthropic
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.constants import ChatAction
 
 from claude import translate_names
 from db.database import (
@@ -14,6 +13,7 @@ from db.database import (
     get_translations,
     save_translations,
 )
+from handlers.loading import loading
 from handlers.texts import strip_any, t, user_lang
 
 logger = logging.getLogger(__name__)
@@ -53,9 +53,9 @@ async def localize_names(names, lang, msg):
     known = get_translations(names, lang)
     missing = [n for n in names if n not in known]
     if missing:
-        await msg.reply_chat_action(ChatAction.TYPING)
         try:
-            new = await translate_names(missing, lang)
+            async with loading(msg, t(lang, "preparing_expenses")):
+                new = await translate_names(missing, lang)
         except anthropic.APIError:
             logger.exception("Translating product names failed")
             new = {}

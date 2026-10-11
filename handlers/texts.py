@@ -23,6 +23,8 @@ TEXTS = {
         "choose_language": "Choose your language",
         "saved": "Saved.",
         "language_set": "Language set to English ✅",
+        "reading_receipt": "Reading your receipt",
+        "preparing_expenses": "Sorting your products",
     },
     "fi": {
         "hi": "Hei {name}👋",
@@ -44,6 +46,8 @@ TEXTS = {
         "choose_language": "Valitse kieli",
         "saved": "Tallennettu.",
         "language_set": "Kieleksi on valittu suomi ✅",
+        "reading_receipt": "Luen kuittia",
+        "preparing_expenses": "Järjestelen tuotteita",
     },
 }
 

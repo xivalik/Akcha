@@ -9,6 +9,7 @@ DATA_DIR = Path(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", BASE_DIR / "data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = DATA_DIR / "bot.db"
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
+NAMING_VERSION = 1  # 1: short shopping-list names ("energy drink", not "energy drink 0,473l can")
 
 
 @contextmanager
@@ -34,6 +35,11 @@ def init_db():
             conn.execute("ALTER TABLE users ADD COLUMN language TEXT")
         if "currency" in columns:
             conn.execute("ALTER TABLE users DROP COLUMN currency")
+        # Saved translations follow the naming rules in claude.py; when the rules change,
+        # bump NAMING_VERSION and the old names are forgotten and asked for again
+        if conn.execute("PRAGMA user_version").fetchone()[0] < NAMING_VERSION:
+            conn.execute("DELETE FROM translations")
+            conn.execute(f"PRAGMA user_version = {NAMING_VERSION}")
 
 
 def save_user(tg_id):

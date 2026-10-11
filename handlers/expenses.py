@@ -1,10 +1,22 @@
+import logging
 import unicodedata
 from html import escape
 
+import anthropic
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.constants import ChatAction
 
-from db.database import add_products, delete_products, get_products
+from claude import translate_names
+from db.database import (
+    add_products,
+    delete_products,
+    get_products,
+    get_translations,
+    save_translations,
+)
 from handlers.texts import strip_any, t, user_lang
+
+logger = logging.getLogger(__name__)
 
 # Phone keyboards auto-replace ' " - with curly/long versions; turn them back
 SMART_PUNCTUATION = str.maketrans(
@@ -33,22 +45,49 @@ def format_money(price):
     return f"{format_price(price)} <i>€</i>"
 
 
+async def localize_names(names, lang, msg):
+    """{name: name in lang}. Saved translations are reused; only new names go to Claude.
+
+    If Claude can't be reached, untranslated names stay as they are.
+    """
+    known = get_translations(names, lang)
+    missing = [n for n in names if n not in known]
+    if missing:
+        await msg.reply_chat_action(ChatAction.TYPING)
+        try:
+            new = await translate_names(missing, lang)
+        except anthropic.APIError:
+            logger.exception("Translating product names failed")
+            new = {}
+        new = {n: tr for n, tr in new.items() if is_valid_name(tr)}
+        if new:
+            save_translations(lang, new)
+        known |= new
+    return {n: known.get(n, n) for n in names}
+
+
 async def expenses(update, context):
     user = update.effective_user
+    msg = update.effective_message
     lang = user_lang(user)
     rows = get_products(user.id)
     if not rows:
-        await update.effective_message.reply_text(t(lang, "no_products"))
+        await msg.reply_text(t(lang, "no_products"))
         return
+    names = await localize_names([r["product_name"] for r in rows], lang, msg)
+    # "maito" and "milk" become the same name after translating: add them up
+    totals = {}
+    for r in rows:
+        name = names[r["product_name"]]
+        totals[name] = totals.get(name, 0) + r["price"]
+    items = sorted(totals.items(), key=lambda item: item[1], reverse=True)
     # escape() so names like "M&M" or "<3" don't break the HTML formatting
-    lines = [
-        f"{escape(r['product_name'])} — {format_money(r['price'])}" for r in rows
-    ]
-    total = sum(r["price"] for r in rows)
+    lines = [f"{escape(name)} — {format_money(price)}" for name, price in items]
+    total = sum(totals.values())
     lines.append("──────────────")
     lines.append(f"{t(lang, 'total')} — {format_money(total)}")
     text = "\n".join(lines)
-    await update.effective_message.reply_text(f"<b>{text}</b>", parse_mode="HTML")
+    await msg.reply_text(f"<b>{text}</b>", parse_mode="HTML")
 
 
 async def add_product_request(update, context):
@@ -80,10 +119,13 @@ def undo_keyboard(ids, lang):
     )
 
 
-async def save_and_reply(msg, tg_id, item, lang):
-    """Save one product and reply "Added ✅" with an Undo button for it."""
+async def save_and_reply(msg, tg_id, item, lang, shown_name=None):
+    """Save one product and reply "Added ✅" with an Undo button for it.
+
+    shown_name replaces the saved name in the reply (e.g. its translation).
+    """
     first_id, last_id = add_products(tg_id, [item])
-    added = f"{escape(item['product_name'])} — {format_money(item['price'])}"
+    added = f"{escape(shown_name or item['product_name'])} — {format_money(item['price'])}"
     await msg.reply_text(
         f"{t(lang, 'added')}{added}",
         parse_mode="HTML",

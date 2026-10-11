@@ -111,3 +111,27 @@ def get_all_tables():
             cur = conn.execute(f'SELECT * FROM "{name}"')
             tables[name] = ([c[0] for c in cur.description], cur.fetchall())
         return tables
+
+
+def get_translations(names, language):
+    """{name: translated name} for the names already translated into language."""
+    if not names:
+        return {}
+    placeholders = ",".join("?" * len(names))
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""SELECT product_name, translated FROM translations
+                WHERE language = ? AND product_name IN ({placeholders})""",
+            (language, *names),
+        ).fetchall()
+    return {r["product_name"]: r["translated"] for r in rows}
+
+
+def save_translations(language, translations):
+    """Remember {name: translated name} pairs for language."""
+    with get_conn() as conn:
+        conn.executemany(
+            """INSERT OR REPLACE INTO translations (product_name, language, translated)
+               VALUES (?, ?, ?)""",
+            [(name, language, translated) for name, translated in translations.items()],
+        )

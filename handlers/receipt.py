@@ -4,8 +4,9 @@ import anthropic
 from telegram.constants import ChatAction
 
 from claude import read_receipt
+from db.database import save_translations
 from handlers.expenses import is_valid_name, save_and_reply
-from handlers.texts import t, user_lang
+from handlers.texts import LANGUAGES, t, user_lang
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,16 @@ async def receipt_photo(update, context):
     if not items:
         await msg.reply_text(t(lang, "receipt_empty"))
         return
+    # Claude already translated the names; save them so /expenses doesn't ask again
+    for code in LANGUAGES:
+        translations = {
+            i["product_name"]: i["translations"][code]
+            for i in items
+            if is_valid_name(i["translations"][code])
+        }
+        if translations:
+            save_translations(code, translations)
     # One message per product so each can be undone and retyped on its own
     for item in items:
-        await save_and_reply(msg, user.id, item, lang)
+        shown = item["translations"][lang]
+        await save_and_reply(msg, user.id, item, lang, shown if is_valid_name(shown) else None)

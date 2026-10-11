@@ -12,3 +12,11 @@ CREATE TABLE IF NOT EXISTS products (
 );
 
 CREATE INDEX IF NOT EXISTS idx_products_user ON products(tg_id);
+
+-- Product names translated into each bot language, filled in by Claude
+CREATE TABLE IF NOT EXISTS translations (
+    product_name TEXT,
+    language TEXT,
+    translated TEXT,
+    PRIMARY KEY (product_name, language)
+);

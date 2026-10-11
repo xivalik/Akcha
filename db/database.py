@@ -28,10 +28,12 @@ def init_db():
     """Create the tables from schema.sql (safe to run every start)."""
     with get_conn() as conn:
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
-        # Databases created before the currency feature don't have the column yet
+        # Older databases have a currency column instead of language
         columns = [r["name"] for r in conn.execute("PRAGMA table_info(users)")]
-        if "currency" not in columns:
-            conn.execute("ALTER TABLE users ADD COLUMN currency TEXT DEFAULT '$'")
+        if "language" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN language TEXT")
+        if "currency" in columns:
+            conn.execute("ALTER TABLE users DROP COLUMN currency")
 
 
 def save_user(tg_id):
@@ -40,23 +42,23 @@ def save_user(tg_id):
         conn.execute("INSERT OR IGNORE INTO users (tg_id) VALUES (?)", (tg_id,))
 
 
-def set_currency(tg_id, currency):
-    """Save the user's currency sign (creates the user if needed)."""
+def set_language(tg_id, language):
+    """Save the user's language code (creates the user if needed)."""
     with get_conn() as conn:
         conn.execute(
-            """INSERT INTO users (tg_id, currency) VALUES (?, ?)
-               ON CONFLICT(tg_id) DO UPDATE SET currency = excluded.currency""",
-            (tg_id, currency),
+            """INSERT INTO users (tg_id, language) VALUES (?, ?)
+               ON CONFLICT(tg_id) DO UPDATE SET language = excluded.language""",
+            (tg_id, language),
         )
 
 
-def get_currency(tg_id):
-    """The user's currency sign, or $ if they never picked one."""
+def get_language(tg_id):
+    """The user's language code, or None if they never picked one."""
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT currency FROM users WHERE tg_id = ?", (tg_id,)
+            "SELECT language FROM users WHERE tg_id = ?", (tg_id,)
         ).fetchone()
-    return row["currency"] if row and row["currency"] else "$"
+    return row["language"] if row else None
 
 
 def add_products(tg_id, items):
@@ -85,12 +87,13 @@ def delete_products(tg_id, first_id, last_id):
 
 
 def get_products(tg_id):
-    """One row per product with all its prices added up ("Apple" and "apple" merge)."""
+    """One row per product with all its prices added up ("Apple" and "apple" merge),
+    most expensive first."""
     with get_conn() as conn:
         return conn.execute(
             """SELECT LOWER(product_name) AS product_name, SUM(price) AS price
                FROM products WHERE tg_id = ?
-               GROUP BY LOWER(product_name) ORDER BY MIN(id)""",
+               GROUP BY LOWER(product_name) ORDER BY SUM(price) DESC, MIN(id)""",
             (tg_id,),
         ).fetchall()
 

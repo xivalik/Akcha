@@ -9,7 +9,9 @@ DATA_DIR = Path(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", BASE_DIR / "data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = DATA_DIR / "bot.db"
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
-NAMING_VERSION = 1  # 1: short shopping-list names ("energy drink", not "energy drink 0,473l can")
+# 1: short shopping-list names ("energy drink", not "energy drink 0,473l can")
+# 2: products are saved under their English name; no translations table
+ENGLISH_VERSION = 2
 
 
 @contextmanager
@@ -29,42 +31,60 @@ def init_db():
     """Create the tables from schema.sql (safe to run every start)."""
     with get_conn() as conn:
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
-        # Older databases have a currency column instead of language
+        # Older databases have a currency or language column; the bot is English only now
         columns = [r["name"] for r in conn.execute("PRAGMA table_info(users)")]
-        if "language" not in columns:
-            conn.execute("ALTER TABLE users ADD COLUMN language TEXT")
-        if "currency" in columns:
-            conn.execute("ALTER TABLE users DROP COLUMN currency")
-        # Saved translations follow the naming rules in claude.py; when the rules change,
-        # bump NAMING_VERSION and the old names are forgotten and asked for again
-        if conn.execute("PRAGMA user_version").fetchone()[0] < NAMING_VERSION:
-            conn.execute("DELETE FROM translations")
-            conn.execute(f"PRAGMA user_version = {NAMING_VERSION}")
+        for column in ("currency", "language"):
+            if column in columns:
+                conn.execute(f"ALTER TABLE users DROP COLUMN {column}")
+
+
+def old_product_names():
+    """For databases from before products were saved in English: ([every product name],
+    {name: English name} already known from the old translations table).
+
+    None once all products are in English.
+    """
+    with get_conn() as conn:
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        if version >= ENGLISH_VERSION:
+            return None
+        names = [
+            r["product_name"]
+            for r in conn.execute("SELECT DISTINCT product_name FROM products")
+        ]
+        has_translations = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'translations'"
+        ).fetchone()
+        # Only version 1 translations follow the current naming rules
+        known = {}
+        if has_translations and version >= 1:
+            known = {
+                r["product_name"]: r["translated"]
+                for r in conn.execute(
+                    "SELECT product_name, translated FROM translations WHERE language = 'en'"
+                )
+            }
+    # The translations were saved under the lowercase name
+    return names, {n: known[n.lower()] for n in names if n.lower() in known}
+
+
+def rename_products(names):
+    """Rename products {old name: English name} and mark the database as all English."""
+    with get_conn() as conn:
+        # By id, so a new name that is also an old name isn't renamed twice
+        rows = conn.execute("SELECT id, product_name FROM products").fetchall()
+        conn.executemany(
+            "UPDATE products SET product_name = ? WHERE id = ?",
+            [(names[r["product_name"]], r["id"]) for r in rows if r["product_name"] in names],
+        )
+        conn.execute("DROP TABLE IF EXISTS translations")
+        conn.execute(f"PRAGMA user_version = {ENGLISH_VERSION}")
 
 
 def save_user(tg_id):
     """Remember a user (does nothing if they already exist)."""
     with get_conn() as conn:
         conn.execute("INSERT OR IGNORE INTO users (tg_id) VALUES (?)", (tg_id,))
-
-
-def set_language(tg_id, language):
-    """Save the user's language code (creates the user if needed)."""
-    with get_conn() as conn:
-        conn.execute(
-            """INSERT INTO users (tg_id, language) VALUES (?, ?)
-               ON CONFLICT(tg_id) DO UPDATE SET language = excluded.language""",
-            (tg_id, language),
-        )
-
-
-def get_language(tg_id):
-    """The user's language code, or None if they never picked one."""
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT language FROM users WHERE tg_id = ?", (tg_id,)
-        ).fetchone()
-    return row["language"] if row else None
 
 
 def add_products(tg_id, items):
@@ -118,26 +138,3 @@ def get_all_tables():
             tables[name] = ([c[0] for c in cur.description], cur.fetchall())
         return tables
 
-
-def get_translations(names, language):
-    """{name: translated name} for the names already translated into language."""
-    if not names:
-        return {}
-    placeholders = ",".join("?" * len(names))
-    with get_conn() as conn:
-        rows = conn.execute(
-            f"""SELECT product_name, translated FROM translations
-                WHERE language = ? AND product_name IN ({placeholders})""",
-            (language, *names),
-        ).fetchall()
-    return {r["product_name"]: r["translated"] for r in rows}
-
-
-def save_translations(language, translations):
-    """Remember {name: translated name} pairs for language."""
-    with get_conn() as conn:
-        conn.executemany(
-            """INSERT OR REPLACE INTO translations (product_name, language, translated)
-               VALUES (?, ?, ?)""",
-            [(name, language, translated) for name, translated in translations.items()],
-        )

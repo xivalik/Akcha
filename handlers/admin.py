@@ -10,7 +10,6 @@ from config import ADMIN_ID
 from db.database import get_all_tables
 
 
-
 def admin_only(func):
     """Silently ignore everyone except the admin."""
 
@@ -48,7 +47,9 @@ def build_db_pdf(now):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Helvetica", size=16)
-    pdf.cell(text=f"Database export {now:%Y-%m-%d %H:%M}", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(
+        text=f"Database export {now:%Y-%m-%d %H:%M}", new_x="LMARGIN", new_y="NEXT"
+    )
 
     for name, (columns, rows) in get_all_tables().items():
         pdf.ln(6)

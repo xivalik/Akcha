@@ -1,8 +1,8 @@
 CREATE TABLE IF NOT EXISTS users (
-    tg_id INTEGER PRIMARY KEY,
-    language TEXT
+    tg_id INTEGER PRIMARY KEY
 );
 
+-- product_name is always the short English name ("milk", not "maito")
 CREATE TABLE IF NOT EXISTS products (
     id INTEGER PRIMARY KEY,
     tg_id INTEGER,
@@ -13,10 +13,3 @@ CREATE TABLE IF NOT EXISTS products (
 
 CREATE INDEX IF NOT EXISTS idx_products_user ON products(tg_id);
 
--- Product names translated into each bot language, filled in by Claude
-CREATE TABLE IF NOT EXISTS translations (
-    product_name TEXT,
-    language TEXT,
-    translated TEXT,
-    PRIMARY KEY (product_name, language)
-);

@@ -23,9 +23,7 @@ def admin_only(func):
 
 @admin_only
 async def admin_panel(update, context):
-    await update.effective_message.reply_text(
-        "Admin panel 🛠\n\n/db - the entire database as a PDF"
-    )
+    await update.effective_message.reply_text("/db - the entire database as a PDF")
 
 
 @admin_only
@@ -55,7 +53,9 @@ def build_db_pdf(now):
         with pdf.table(headings_style=heading_style) as table:
             table.row(columns)
             for row in rows:
-                table.row(["" if value is None else to_latin(str(value)) for value in row])
+                table.row(
+                    ["" if value is None else to_latin(str(value)) for value in row]
+                )
 
     return BytesIO(pdf.output())
 

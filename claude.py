@@ -1,12 +1,11 @@
 import base64
-import json
 
 import anthropic
 from pydantic import BaseModel
 
-from config import CLAUDE_API
+from config import CLAUDE_API_KEY
 
-client = anthropic.AsyncAnthropic(api_key=CLAUDE_API)
+client = anthropic.AsyncAnthropic(api_key=CLAUDE_API_KEY)
 MODEL = "claude-haiku-5-5"
 
 
@@ -42,13 +41,11 @@ Special lines:
 
 If the image is not a receipt or nothing is readable, return an empty list."""
 
-ENGLISH_PROMPT = f"""You name products for a shopping expense tracker. The names were typed
-by users in any language (mostly Finnish or English) and are often too detailed.
+NAME_PROMPT = f"""You name products for a shopping expense tracker. The user typed a product
+name in any language (mostly Finnish or English), and it is often too detailed.
 
-Give each name's short shopping-list name in English. Rules:
-{NAMING_RULES}
-
-Return one item per name, with name copied exactly as given."""
+Give the product's short shopping-list name in English. Rules:
+{NAMING_RULES}"""
 
 
 class ReceiptItem(BaseModel):
@@ -60,23 +57,18 @@ class Receipt(BaseModel):
     items: list[ReceiptItem]
 
 
-class EnglishName(BaseModel):
+class ProductName(BaseModel):
     name: str
-    english: str
 
 
-class EnglishNames(BaseModel):
-    items: list[EnglishName]
-
-
-def clean(name):
+def clean_name(name):
     return name.strip().lower()
 
 
 async def read_receipt(image: bytes):
     """Ask Claude for the products on a receipt photo.
 
-    Returns [{"product_name", "price"}] with the names in English.
+    Returns [(name, price)] with the names in English.
     """
     response = await client.messages.parse(
         model=MODEL,
@@ -104,30 +96,22 @@ async def read_receipt(image: bytes):
     # A refusal or a cut-off answer has no parsed result
     if response.stop_reason != "end_turn" or response.parsed_output is None:
         return []
-    return [
-        {"product_name": clean(i.name), "price": i.price}
-        for i in response.parsed_output.items
-    ]
+    return [(clean_name(item.name), item.price) for item in response.parsed_output.items]
 
 
-async def english_names(names):
-    """Ask Claude for the short English names of products typed in any language.
+async def english_name(name):
+    """Ask Claude for the short English name of a product typed in any language.
 
-    Returns {name: english name}; names Claude skipped are left out.
+    Returns None if Claude gives no answer.
     """
     response = await client.messages.parse(
         model=MODEL,
         max_tokens=16000,
         output_config={"effort": "low"},
-        system=ENGLISH_PROMPT,
-        messages=[{"role": "user", "content": json.dumps(names, ensure_ascii=False)}],
-        output_format=EnglishNames,
+        system=NAME_PROMPT,
+        messages=[{"role": "user", "content": name}],
+        output_format=ProductName,
     )
     if response.stop_reason != "end_turn" or response.parsed_output is None:
-        return {}
-    wanted = set(names)
-    return {
-        i.name: clean(i.english)
-        for i in response.parsed_output.items
-        if i.name in wanted
-    }
+        return None
+    return clean_name(response.parsed_output.name)

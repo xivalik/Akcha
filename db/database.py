@@ -9,9 +9,6 @@ DATA_DIR = Path(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", BASE_DIR / "data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = DATA_DIR / "bot.db"
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
-# 1: short shopping-list names ("energy drink", not "energy drink 0,473l can")
-# 2: products are saved under their English name; no translations table
-ENGLISH_VERSION = 2
 
 
 @contextmanager
@@ -31,54 +28,6 @@ def init_db():
     """Create the tables from schema.sql (safe to run every start)."""
     with get_conn() as conn:
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
-        # Older databases have a currency or language column; the bot is English only now
-        columns = [r["name"] for r in conn.execute("PRAGMA table_info(users)")]
-        for column in ("currency", "language"):
-            if column in columns:
-                conn.execute(f"ALTER TABLE users DROP COLUMN {column}")
-
-
-def old_product_names():
-    """For databases from before products were saved in English: ([every product name],
-    {name: English name} already known from the old translations table).
-
-    None once all products are in English.
-    """
-    with get_conn() as conn:
-        version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version >= ENGLISH_VERSION:
-            return None
-        names = [
-            r["product_name"]
-            for r in conn.execute("SELECT DISTINCT product_name FROM products")
-        ]
-        has_translations = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'translations'"
-        ).fetchone()
-        # Only version 1 translations follow the current naming rules
-        known = {}
-        if has_translations and version >= 1:
-            known = {
-                r["product_name"]: r["translated"]
-                for r in conn.execute(
-                    "SELECT product_name, translated FROM translations WHERE language = 'en'"
-                )
-            }
-    # The translations were saved under the lowercase name
-    return names, {n: known[n.lower()] for n in names if n.lower() in known}
-
-
-def rename_products(names):
-    """Rename products {old name: English name} and mark the database as all English."""
-    with get_conn() as conn:
-        # By id, so a new name that is also an old name isn't renamed twice
-        rows = conn.execute("SELECT id, product_name FROM products").fetchall()
-        conn.executemany(
-            "UPDATE products SET product_name = ? WHERE id = ?",
-            [(names[r["product_name"]], r["id"]) for r in rows if r["product_name"] in names],
-        )
-        conn.execute("DROP TABLE IF EXISTS translations")
-        conn.execute(f"PRAGMA user_version = {ENGLISH_VERSION}")
 
 
 def save_user(tg_id):
@@ -87,29 +36,22 @@ def save_user(tg_id):
         conn.execute("INSERT OR IGNORE INTO users (tg_id) VALUES (?)", (tg_id,))
 
 
-def add_products(tg_id, items):
-    """Insert all items in one transaction and return (first_id, last_id).
-
-    The ids are consecutive because nothing else can write in between.
-    """
-    with get_conn() as conn:
-        ids = [
-            conn.execute(
-                "INSERT INTO products (tg_id, product_name, price) VALUES (?, ?, ?)",
-                (tg_id, i["product_name"], i["price"]),
-            ).lastrowid
-            for i in items
-        ]
-    return ids[0], ids[-1]
-
-
-def delete_products(tg_id, first_id, last_id):
-    """Delete the user's products with ids in [first_id, last_id]; return count."""
+def save_product(tg_id, name, price):
+    """Save one product for the user and return its id."""
     with get_conn() as conn:
         return conn.execute(
-            "DELETE FROM products WHERE tg_id = ? AND id BETWEEN ? AND ?",
-            (tg_id, first_id, last_id),
+            "INSERT INTO products (tg_id, product_name, price) VALUES (?, ?, ?)",
+            (tg_id, name, price),
+        ).lastrowid
+
+
+def delete_product(tg_id, product_id):
+    """Delete one of the user's products; False if it was already deleted."""
+    with get_conn() as conn:
+        deleted = conn.execute(
+            "DELETE FROM products WHERE tg_id = ? AND id = ?", (tg_id, product_id)
         ).rowcount
+    return deleted > 0
 
 
 def get_products(tg_id):
@@ -123,18 +65,19 @@ def get_products(tg_id):
             (tg_id,),
         ).fetchall()
 
+
 def get_all_tables():
     """Return {table_name: (column_names, rows)} for every table in the database."""
     with get_conn() as conn:
-        names = [
+        table_names = [
             r["name"]
             for r in conn.execute(
                 "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
             )
         ]
         tables = {}
-        for name in names:
-            cur = conn.execute(f'SELECT * FROM "{name}"')
-            tables[name] = ([c[0] for c in cur.description], cur.fetchall())
+        for table_name in table_names:
+            cursor = conn.execute(f'SELECT * FROM "{table_name}"')
+            columns = [column[0] for column in cursor.description]
+            tables[table_name] = (columns, cursor.fetchall())
         return tables
-

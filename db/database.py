@@ -64,20 +64,3 @@ def get_products(tg_id):
                GROUP BY LOWER(product_name) ORDER BY SUM(price) DESC, MIN(id)""",
             (tg_id,),
         ).fetchall()
-
-
-def get_all_tables():
-    """Return {table_name: (column_names, rows)} for every table in the database."""
-    with get_conn() as conn:
-        table_names = [
-            r["name"]
-            for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
-            )
-        ]
-        tables = {}
-        for table_name in table_names:
-            cursor = conn.execute(f'SELECT * FROM "{table_name}"')
-            columns = [column[0] for column in cursor.description]
-            tables[table_name] = (columns, cursor.fetchall())
-        return tables

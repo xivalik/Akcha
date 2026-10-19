@@ -15,7 +15,6 @@ from handlers.expenses import expenses, add_product, undo_ask, undo_yes, undo_no
 from handlers.receipt import receipt_photo
 
 logging.basicConfig(level=logging.INFO)
-# httpx logs every request, and the request URLs contain the bot token
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
